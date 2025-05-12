@@ -2,11 +2,9 @@
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
-    // Estados da máquina
-    enum State { IDLE, RECEIVING };
+    enum State { IDLE, RECEIVING, SKIP_STOP };
     static State state = IDLE;
 
-    // Dados para decodificação
     static std::deque<unsigned int> window;
     static int sample_index = 0;
     static int bit_index = 0;
@@ -17,17 +15,14 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 
         switch (state) {
         case IDLE:
-            // Manter uma janela deslizante de 30 amostras
             window.push_back(sample);
             if (window.size() > 30)
                 window.pop_front();
 
-            // Verificar se tem 25 ou mais amostras com valor 0
-            if (window.size() == 30 && sample == 0) {
+            if (sample == 0 && window.size() == 30) {
                 int low_count = 0;
                 for (unsigned int s : window)
-                    if (s == 0)
-                        low_count++;
+                    if (s == 0) low_count++;
 
                 if (low_count >= 25) {
                     // Start bit detectado
@@ -42,22 +37,31 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
         case RECEIVING:
             sample_index++;
 
-            // Vamos amostrar no meio de cada bit (primeiro em 80, depois a cada 160)
             if ((sample_index - 80) % 160 == 0 && bit_index < 8) {
                 current_byte |= (sample & 1) << bit_index;
                 bit_index++;
             }
 
-            // Após receber todos os bits de dados + stop bit
             if (bit_index == 8 && sample_index >= 80 + 8 * 160) {
+                // Byte completo (dados + stop bit)
                 get_byte(current_byte);
+                state = SKIP_STOP;
+                sample_index = 0;  // reinicia para contar 160 amostras de stop bit
+            }
+            break;
+
+        case SKIP_STOP:
+            sample_index++;
+            if (sample_index >= 160) {
+                // Ignorou o stop bit, volta a escutar
                 state = IDLE;
-                window.clear(); // Recomeça janela de start bit
+                window.clear();
             }
             break;
         }
     }
 }
+
 
 void UART_TX::put_byte(uint8_t byte)
 {
