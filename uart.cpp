@@ -10,11 +10,17 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
     static int bit_index = 0;
     static uint8_t current_byte = 0;
     static int wait_for = 0;
+    static int skip_count = 0;
 
     for (unsigned int i = 0; i < n; ++i) {
         unsigned int sample = buffer[i];
 
         if (state == IDLE) {
+            if (skip_count > 0) {
+                --skip_count;
+                continue;
+            }
+
             window.push_back(sample);
             if (window.size() > 30)
                 window.pop_front();
@@ -25,12 +31,12 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                     if (s == 0) low_count++;
 
                 if (low_count >= 25) {
-                    // Achou início do start bit
                     state = RECEIVING;
                     sample_index = 0;
                     bit_index = 0;
                     current_byte = 0;
-                    wait_for = 80; 
+                    wait_for = SAMPLES_PER_SYMBOL / 2;  
+                    window.clear();
                 }
             }
         }
@@ -41,17 +47,17 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                 if (bit_index < 8) {
                     current_byte |= (sample & 1) << bit_index;
                     bit_index++;
-                    wait_for += 160;
+                    wait_for += SAMPLES_PER_SYMBOL;
                 } else {
-                    // Ignora stop bit, depois reinicia
                     get_byte(current_byte);
                     state = IDLE;
-                    window.clear();
+                    skip_count = SAMPLES_PER_SYMBOL;
                 }
             }
         }
     }
 }
+
 
 void UART_TX::put_byte(uint8_t byte)
 {
