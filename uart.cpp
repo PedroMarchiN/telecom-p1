@@ -35,7 +35,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                     sample_index = 0;
                     bit_index = 0;
                     current_byte = 0;
-                    wait_for = (SAMPLES_PER_SYMBOL / 2) + 1; 
+                    wait_for = SAMPLES_PER_SYMBOL;  // 160
                     window.clear();
                 }
             }
@@ -51,12 +51,13 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                 } else {
                     get_byte(current_byte);
                     state = IDLE;
-                    skip_count = SAMPLES_PER_SYMBOL;
+                    skip_count = SAMPLES_PER_SYMBOL;  
                 }
             }
         }
     }
 }
+
 
 
 void UART_TX::put_byte(uint8_t byte)
