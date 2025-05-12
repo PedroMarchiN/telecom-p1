@@ -5,13 +5,12 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
     enum State { IDLE, RECEIVING };
     static State state = IDLE;
 
-    static std::deque<unsigned int> window;
-    static int sample_index = 0;
-    static int bit_index = 0;
-    static uint8_t current_byte = 0;
-    static int wait_for = 0;
-    static int skip_count = 0;
-    static unsigned int prev_sample = 1;  
+    static int  sample_index = 0;      
+    static int  bit_index    = 0;     
+    static uint8_t current_byte = 0;   
+    static int  wait_for     = 0;     
+    static int  skip_count   = 0;     
+    static unsigned int prev_sample = 1; 
 
     for (unsigned int i = 0; i < n; ++i) {
         unsigned int sample = buffer[i];
@@ -19,27 +18,19 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
         if (state == IDLE) {
             if (skip_count > 0) {
                 --skip_count;
-            } else {
-                window.push_back(sample);
-                if (window.size() > 30) window.pop_front();
-
-                if (sample == 0 && window.size() == 30) {
-                    int low_count = 0;
-                    for (auto s : window)
-                        if (s == 0) low_count++;
-                    if (low_count >= 25) {
-                        state = RECEIVING;
-                        sample_index = 0;
-                        bit_index = 0;
-                        current_byte = 0;
-                        wait_for = SAMPLES_PER_SYMBOL + SAMPLES_PER_SYMBOL / 2;  // 240
-                        window.clear();
-                    }
+            }
+            else {
+                if (prev_sample == 1 && sample == 0) {
+                    state        = RECEIVING;
+                    sample_index = 0;
+                    bit_index    = 0;
+                    current_byte = 0;
+                    wait_for     = SAMPLES_PER_SYMBOL / 2;
                 }
             }
         }
-        else if (state == RECEIVING) {
-            sample_index++;
+        else{
+            ++sample_index;
 
             if (sample_index == wait_for) {
                 if (bit_index < 8) {
@@ -49,18 +40,21 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                     unsigned int bit = (s_prev + s_cur + s_next >= 2 ? 1u : 0u);
 
                     current_byte |= bit << bit_index;
-                    bit_index++;
+                    ++bit_index;
                     wait_for += SAMPLES_PER_SYMBOL;
-                } else {
+                }
+                else {
                     get_byte(current_byte);
-                    state = IDLE;
-                    skip_count = SAMPLES_PER_SYMBOL / 2;  
+                    state      = IDLE;
+                    skip_count = SAMPLES_PER_SYMBOL / 2;
                 }
             }
         }
+
         prev_sample = sample;
     }
 }
+
 
 
 
