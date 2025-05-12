@@ -51,7 +51,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                 } else {
                     get_byte(current_byte);
                     state = IDLE;
-                    skip_count = SAMPLES_PER_SYMBOL;  
+                    skip_count = SAMPLES_PER_SYMBOL/2;  // 80
                 }
             }
         }
