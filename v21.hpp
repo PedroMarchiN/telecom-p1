@@ -4,10 +4,8 @@
 #include <vector>
 #include <functional>
 #include <cmath>
+#include "config.hpp"
 
-// Constantes do sistema
-constexpr float SAMPLING_RATE = 48000.0f;
-constexpr float SAMPLING_PERIOD = 1.0f / SAMPLING_RATE;
 
 // Filtro passa-banda simples (IIR ressonante)
 class BandPassFilter {
