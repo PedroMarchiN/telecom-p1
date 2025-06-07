@@ -1,52 +1,69 @@
 #include "uart.hpp"
 
+#include "uart.hpp"
+#include <deque>
+
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
-    for (unsigned int i = 0; i < n; i++) {
-        this->samples.push_front(buffer[i]);
-        if (this->samples[0] == 0)
-            this->low_bit_counter++;
-        if (this->samples[30] == 0)
-            this->low_bit_counter--; // low bit leaving the window 
+    enum State { IDLE, RECEIVING };
+    static State state = IDLE;
 
-        switch (state) {
-            case IDLE:
-                if (low_bit_counter >= 25 && this->samples[93] == 0) {
-                    // This is a start bit!
-                    this->cycles_counter = 15; // after midbit (79 out of 160)
-                    this->byte = 0;
-                    this->bits_read = 0;
-                    this->state = DATA_BIT;
+    static std::deque<unsigned int> window;
+    static int sample_index = 0;
+    static int bit_index = 0;
+    static uint8_t current_byte = 0;
+    static int wait_for = 0;
+
+    for (unsigned int i = 0; i < n; ++i) {
+        unsigned int sample = buffer[i];
+
+        if (state == IDLE) {
+            // Preencher a janela com as últimas 30 amostras
+            window.push_back(sample);
+            if (window.size() > 30)
+                window.pop_front();
+
+            // Se a amostra atual é 0 (início do start bit)
+            if (sample == 0 && window.size() == 30) {
+                int low_count = 0;
+                for (auto s : window)
+                    if (s == 0) low_count++;
+
+                if (low_count >= 25) {
+                    // Transita para RECEIVING
+                    state = RECEIVING;
+                    sample_index = 0;
+                    bit_index = 0;
+                    current_byte = 0;
+                    wait_for = 15+160;
+                    window.clear();
                 }
-
-                break;
-
-            case DATA_BIT:
-                if (this->cycles_counter == 159) {
-                    this->byte += this->samples[0] << this->bits_read;
-                    this->bits_read++;
-                    this->cycles_counter = 0;
-                    if (this->bits_read == 8) 
-                        this->state = STOP_BIT;
-                } else
-                    this->cycles_counter++; 
-
-                break;
-
-            case STOP_BIT:
-                if (this->cycles_counter == 159) {
-                    this->get_byte(this->byte);
-                    this->state = IDLE;
-                } else
-                    this->cycles_counter++;
-                break;
-
-            default: break;
+            }
         }
+        else if (state == RECEIVING) {
+            // Conta amostras desde o meio do start bit
+            sample_index++;
 
-        this->samples.pop_back();
+            // Quando alcançamos o marco de amostragem:
+            if (sample_index == wait_for) {
+                if (bit_index < 8) {
+                    current_byte |= (sample & 1) << bit_index;
+                    bit_index++;
+                    // programa o próximo marco
+                    wait_for += 160;
+                }
+                else {
+                    // Chegou ao stop bit: entrega o byte e volta a IDLE
+                    get_byte(current_byte);
+                    state = IDLE;
+                    window.clear();
+                }
+            }
+        }
     }
 }
+
+
 
 void UART_TX::put_byte(uint8_t byte)
 {
