@@ -1,72 +1,49 @@
 #include "v21.hpp"
-#include <cmath>
 #include <algorithm>
 #include <numbers>
 
 void V21_RX::init_filters() {
-    const float bw = 100.0f; // Largura de banda dos filtros
-    const float mark_freq = omega_mark / (2 * std::numbers::pi_v<float>);
-    const float space_freq = omega_space / (2 * std::numbers::pi_v<float>);
-    const float sampling_rate = 1.0f / sampling_period;
+    // Filtros para demodulação coerente (I e Q para cada frequência)
+    const float bw = 70.0f; // Largura de banda mais estreita
     
-    // Filtro passa-banda para marca (FIR com janela de Hamming)
     for (int i = 0; i < 32; i++) {
         float n = i - 16;
+        float t = n / sampling_rate;
+        
+        // Filtros para marca (1180 Hz)
+        mark_i_coeffs[i] = 2 * bw/sampling_rate * std::cos(2 * M_PI * mark_freq * t) * 
+                          (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
+        mark_q_coeffs[i] = 2 * bw/sampling_rate * std::sin(2 * M_PI * mark_freq * t) * 
+                          (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
+        
+        // Filtros para espaço (980 Hz)
+        space_i_coeffs[i] = 2 * bw/sampling_rate * std::cos(2 * M_PI * space_freq * t) * 
+                           (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
+        space_q_coeffs[i] = 2 * bw/sampling_rate * std::sin(2 * M_PI * space_freq * t) * 
+                           (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
+        
+        // Filtro passa-baixa para o envelope
         if (n == 0) {
-            mark_filter_coeffs[i] = 2 * bw / sampling_rate;
+            lowpass_coeffs[i] = 2 * 30.0f / sampling_rate;
         } else {
-            mark_filter_coeffs[i] = std::sin(2 * std::numbers::pi_v<float> * bw * n / sampling_rate) / 
-                                  (std::numbers::pi_v<float> * n) *
-                                  std::cos(2 * std::numbers::pi_v<float> * mark_freq * n / sampling_rate);
+            lowpass_coeffs[i] = std::sin(2 * M_PI * 30.0f * n / sampling_rate) / (M_PI * n) * 
+                               (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
         }
-        // Aplica janela de Hamming
-        mark_filter_coeffs[i] *= 0.54f - 0.46f * std::cos(2 * std::numbers::pi_v<float> * i / 31);
-    }
-    
-    // Filtro passa-banda para espaço
-    for (int i = 0; i < 32; i++) {
-        float n = i - 16;
-        if (n == 0) {
-            space_filter_coeffs[i] = 2 * bw / sampling_rate;
-        } else {
-            space_filter_coeffs[i] = std::sin(2 * std::numbers::pi_v<float> * bw * n / sampling_rate) / 
-                                     (std::numbers::pi_v<float> * n) *
-                                     std::cos(2 * std::numbers::pi_v<float> * space_freq * n / sampling_rate);
-        }
-        // Aplica janela de Hamming
-        space_filter_coeffs[i] *= 0.54f - 0.46f * std::cos(2 * std::numbers::pi_v<float> * i / 31);
-    }
-    
-    // Filtro passa-baixa para o detector de envelope
-    const float cutoff = 50.0f; // Frequência de corte do passa-baixa
-    for (int i = 0; i < 32; i++) {
-        float n = i - 16;
-        if (n == 0) {
-            lowpass_filter_coeffs[i] = 2 * cutoff / sampling_rate;
-        } else {
-            lowpass_filter_coeffs[i] = std::sin(2 * std::numbers::pi_v<float> * cutoff * n / sampling_rate) / 
-                                     (std::numbers::pi_v<float> * n);
-        }
-        // Aplica janela de Hamming
-        lowpass_filter_coeffs[i] *= 0.54f - 0.46f * std::cos(2 * std::numbers::pi_v<float> * i / 31);
     }
 }
 
 float V21_RX::fir_filter(float sample, const std::array<float, 32>& coeffs, std::array<float, 32>& state) {
-    // Desloca o estado do filtro
     std::rotate(state.begin(), state.begin() + 1, state.end());
     state.back() = sample;
     
-    // Calcula a saída do filtro
     float output = 0.0f;
     for (int i = 0; i < 32; i++) {
         output += coeffs[i] * state[i];
     }
-    
     return output;
 }
 
-bool V21_RX::detect_carrier(float mark_energy, float space_energy) {
+bool V21_RX::detect_carrier() {
     bool carrier_present = (mark_energy > carrier_threshold) || 
                          (space_energy > carrier_threshold);
     
@@ -74,8 +51,21 @@ bool V21_RX::detect_carrier(float mark_energy, float space_energy) {
         no_carrier_time = 0.0f;
         return true;
     } else {
-        no_carrier_time += sampling_period;
+        no_carrier_time += 1.0f/sampling_rate;
         return (no_carrier_time < NO_CARRIER_TIMEOUT);
+    }
+}
+
+int V21_RX::decide_bit() {
+    // Suaviza a decisão com histerese
+    const float hysteresis = 0.1f;
+    
+    if (mark_energy > space_energy * (1.0f + hysteresis)) {
+        return 1;
+    } else if (space_energy > mark_energy * (1.0f + hysteresis)) {
+        return 0;
+    } else {
+        return last_bit; // Mantém o último bit se não for clara a decisão
     }
 }
 
@@ -85,40 +75,33 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n) {
     for (unsigned int i = 0; i < n; i++) {
         float sample = in_analog_samples[i];
         
-        // Filtra o sinal nas frequências de marca e espaço
-        float mark_filtered = fir_filter(sample, mark_filter_coeffs, mark_filter_state);
-        float space_filtered = fir_filter(sample, space_filter_coeffs, space_filter_state);
+        // Demodulação coerente (I e Q para cada frequência)
+        float mark_i = fir_filter(sample, mark_i_coeffs, mark_i_state);
+        float mark_q = fir_filter(sample, mark_q_coeffs, mark_q_state);
+        float space_i = fir_filter(sample, space_i_coeffs, space_i_state);
+        float space_q = fir_filter(sample, space_q_coeffs, space_q_state);
         
-        // Calcula a energia em cada frequência
-        float mark_energy = mark_filtered * mark_filtered;
-        float space_energy = space_filtered * space_filtered;
+        // Calcula as energias
+        mark_energy = fir_filter(mark_i*mark_i + mark_q*mark_q, lowpass_coeffs, lowpass_state);
+        space_energy = fir_filter(space_i*space_i + space_q*space_q, lowpass_coeffs, lowpass_state);
         
-        // Detecta se há portadora presente
-        bool carrier_present = detect_carrier(mark_energy, space_energy);
-        
-        if (!carrier_present) {
+        if (!detect_carrier()) {
             digital_samples[i] = 1; // Linha ociosa
+            last_bit = 1;
             continue;
         }
         
-        // Calcula a diferença de energia e filtra
-        float energy_diff = mark_energy - space_energy;
-        float filtered_diff = fir_filter(energy_diff, lowpass_filter_coeffs, lowpass_filter_state);
-        
-        // Decisão do bit
-        digital_samples[i] = (filtered_diff > 0) ? 1 : 0;
+        last_bit = decide_bit();
+        digital_samples[i] = last_bit;
     }
     
     get_digital_samples(digital_samples, n);
 }
 
-void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n)
-{
+void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n) {
     while (n--) {
-        *out_analog_samples++ = sin(phase);
+        *out_analog_samples++ = std::sin(phase);
         phase += (*in_digital_samples++ ? omega_mark : omega_space) * SAMPLING_PERIOD;
-
-        // evita que phase cresça indefinidamente, o que causaria perda de precisão
-        phase = remainder(phase, 2*std::numbers::pi);
+        phase = std::remainder(phase, 2*std::numbers::pi_v<float>);
     }
 }
