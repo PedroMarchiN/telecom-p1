@@ -3,29 +3,40 @@
 #include "uart.hpp"
 #include <deque>
 
+UART_RX::UART_RX(std::function<void(uint8_t)> get_byte) : 
+    get_byte(get_byte),
+    byte(0),
+    cycles_counter(0),
+    low_bit_counter(0),
+    bits_read(0),
+    state(IDLE) 
+{
+    // Inicializa com 93 amostras de valor 1 (estado idle)
+    for (int i = 0; i < 93; i++) {
+        samples.push_back(1);
+    }
+}
+
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
     for (unsigned int i = 0; i < n; i++) {
-        // Adiciona nova amostra no início do deque
+        // Atualiza a janela deslizante
         samples.push_front(buffer[i]);
-        
-        // Atualiza contador de bits baixos
         if (buffer[i] == 0) low_bit_counter++;
-        if (samples.size() > 93 && samples.back() == 0) {
-            low_bit_counter--;
-        }
         
-        // Mantém tamanho fixo de 93 amostras
+        // Remove amostra mais antiga se necessário
         if (samples.size() > 93) {
+            if (samples.back() == 0) low_bit_counter--;
             samples.pop_back();
         }
 
         switch (state) {
             case IDLE:
                 // Detecta start bit quando:
-                // - Pelo menos 25 bits baixos na janela
-                // - Amostra central (46) é 0
-                if (low_bit_counter >= 25 && samples.size() == 93 && samples[46] == 0) {
-                    cycles_counter = 15;  // Ponto de amostragem no centro do bit
+                // - Janela cheia (93 amostras)
+                // - Pelo menos 25 bits baixos
+                // - Amostra no centro (índice 46) é 0
+                if (samples.size() == 93 && low_bit_counter >= 25 && samples[46] == 0) {
+                    cycles_counter = 79;  // Ponto de amostragem no meio do primeiro bit
                     byte = 0;
                     bits_read = 0;
                     state = DATA_BIT;
@@ -33,9 +44,8 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
                 break;
                 
             case DATA_BIT:
-                cycles_counter++;
-                if (cycles_counter == 160) {  // Fim do período de um bit
-                    // Amostra o bit no centro do período
+                if (++cycles_counter >= 160) {
+                    // Amostra no final do período do bit
                     byte |= (samples[0] & 1) << bits_read;
                     bits_read++;
                     cycles_counter = 0;
@@ -47,9 +57,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
                 break;
                 
             case STOP_BIT:
-                cycles_counter++;
-                if (cycles_counter == 160) {
-                    // Entrega byte completo
+                if (++cycles_counter >= 160) {
                     get_byte(byte);
                     state = IDLE;
                 }
