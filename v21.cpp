@@ -1,27 +1,34 @@
-#include <math.h>
-#include <numbers>
+#include <cmath>
+#include <vector>
 #include "v21.hpp"
 
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
 {
+    // Limpa e reserva espaço para os bits demodulados
     digital_samples.clear();
     digital_samples.reserve(n);
 
     for (unsigned int i = 0; i < n; ++i) {
-        float x      = in_analog_samples[i];
-        float y_mark = bp_mark.process(x);
-        float y_space= bp_space.process(x);
+        float x = in_analog_samples[i];
+
+        // Aplica os dois filtros passa-banda
+        float y_mark  = bp_mark.process(x);   // Filtro para 1850 Hz
+        float y_space = bp_space.process(x);  // Filtro para 1650 Hz
+
+        // Calcula a diferença entre as energias e passa por filtro passa-baixa
         float y_diff = lp_diff.process(y_space - y_mark);
 
+        // Detecta ausência de portadora (sinal fraco em ambas bandas)
         bool no_carrier = (std::fabs(y_mark) + std::fabs(y_space) < noise_floor);
-        unsigned int bit = no_carrier
-            ? 1u
-            : (y_diff > threshold ? 0u : 1u);
 
+        // Decide o bit com base na energia relativa
+        unsigned int bit = no_carrier ? 1u : (y_diff > threshold ? 0u : 1u);
+
+        // Armazena bit
         digital_samples.push_back(bit);
     }
 
-    // entrega todos os bits de uma vez para a UART
+    // Entrega os bits para a UART (ou camada superior)
     get_digital_samples(digital_samples.data(), digital_samples.size());
 }
 
