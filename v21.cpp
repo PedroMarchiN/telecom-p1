@@ -2,71 +2,48 @@
 #include <algorithm>
 #include <numbers>
 
-void V21_RX::init_filters() {
-    // Filtros para demodulação coerente (I e Q para cada frequência)
-    const float bw = 70.0f; // Largura de banda mais estreita
+float V21_RX::lowpass_filter(float input) {
+    // Implementação do filtro IIR passa-baixa
+    float output = b_coeffs[0] * input + filter_state[0];
+    filter_state[0] = b_coeffs[1] * input - a_coeffs[1] * output + filter_state[1];
+    filter_state[1] = b_coeffs[2] * input - a_coeffs[2] * output;
+    return output;
+}
+
+void V21_RX::update_carrier_state(float decision) {
+    float abs_decision = std::abs(decision);
     
-    for (int i = 0; i < 32; i++) {
-        float n = i - 16;
-        float t = n / sampling_rate;
-        
-        // Filtros para marca (1180 Hz)
-        mark_i_coeffs[i] = 2 * bw/sampling_rate * std::cos(2 * M_PI * mark_freq * t) * 
-                          (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
-        mark_q_coeffs[i] = 2 * bw/sampling_rate * std::sin(2 * M_PI * mark_freq * t) * 
-                          (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
-        
-        // Filtros para espaço (980 Hz)
-        space_i_coeffs[i] = 2 * bw/sampling_rate * std::cos(2 * M_PI * space_freq * t) * 
-                           (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
-        space_q_coeffs[i] = 2 * bw/sampling_rate * std::sin(2 * M_PI * space_freq * t) * 
-                           (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
-        
-        // Filtro passa-baixa para o envelope
-        if (n == 0) {
-            lowpass_coeffs[i] = 2 * 30.0f / sampling_rate;
+    if (!carrier_state) {
+        // Estado sem portadora - verifica se deve entrar no estado com portadora
+        if (abs_decision > CARRIER_THRESHOLD_HIGH) {
+            carrier_state = true;
+            carrier_hold_counter = 0;
+        }
+    } else {
+        // Estado com portadora - verifica se deve sair
+        if (abs_decision < CARRIER_THRESHOLD_LOW) {
+            carrier_hold_counter++;
+            if (carrier_hold_counter >= CARRIER_HOLD_COUNT) {
+                carrier_state = false;
+            }
         } else {
-            lowpass_coeffs[i] = std::sin(2 * M_PI * 30.0f * n / sampling_rate) / (M_PI * n) * 
-                               (0.54f - 0.46f * std::cos(2 * M_PI * i / 31));
+            carrier_hold_counter = 0;
         }
     }
 }
 
-float V21_RX::fir_filter(float sample, const std::array<float, 32>& coeffs, std::array<float, 32>& state) {
-    std::rotate(state.begin(), state.begin() + 1, state.end());
-    state.back() = sample;
+int V21_RX::decide_bit(float decision) {
+    // Histerese na decisão
+    const float HYSTERESIS = 20.0f;
+    static int last_bit = 1;
     
-    float output = 0.0f;
-    for (int i = 0; i < 32; i++) {
-        output += coeffs[i] * state[i];
+    if (decision > HYSTERESIS) {
+        last_bit = 1;
+    } else if (decision < -HYSTERESIS) {
+        last_bit = 0;
     }
-    return output;
-}
-
-bool V21_RX::detect_carrier() {
-    bool carrier_present = (mark_energy > carrier_threshold) || 
-                         (space_energy > carrier_threshold);
     
-    if (carrier_present) {
-        no_carrier_time = 0.0f;
-        return true;
-    } else {
-        no_carrier_time += 1.0f/sampling_rate;
-        return (no_carrier_time < NO_CARRIER_TIMEOUT);
-    }
-}
-
-int V21_RX::decide_bit() {
-    // Suaviza a decisão com histerese
-    const float hysteresis = 0.1f;
-    
-    if (mark_energy > space_energy * (1.0f + hysteresis)) {
-        return 1;
-    } else if (space_energy > mark_energy * (1.0f + hysteresis)) {
-        return 0;
-    } else {
-        return last_bit; // Mantém o último bit se não for clara a decisão
-    }
+    return last_bit;
 }
 
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n) {
@@ -75,24 +52,45 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n) {
     for (unsigned int i = 0; i < n; i++) {
         float sample = in_analog_samples[i];
         
-        // Demodulação coerente (I e Q para cada frequência)
-        float mark_i = fir_filter(sample, mark_i_coeffs, mark_i_state);
-        float mark_q = fir_filter(sample, mark_q_coeffs, mark_q_state);
-        float space_i = fir_filter(sample, space_i_coeffs, space_i_state);
-        float space_q = fir_filter(sample, space_q_coeffs, space_q_state);
+        // Atualiza buffer de atraso
+        float delayed_sample = delay_buffer[delay_index];
+        delay_buffer[delay_index] = sample;
+        delay_index = (delay_index + 1) % L;
         
-        // Calcula as energias
-        mark_energy = fir_filter(mark_i*mark_i + mark_q*mark_q, lowpass_coeffs, lowpass_state);
-        space_energy = fir_filter(space_i*space_i + space_q*space_q, lowpass_coeffs, lowpass_state);
+        // Filtros ressonantes para marca (1180Hz)
+        float new_mark_r = sample - r_pow_L * cos_mark_L * delayed_sample + 
+                         r * (cos_mark * mark_r - sin_mark * mark_i);
+        float new_mark_i = -r_pow_L * sin_mark_L * delayed_sample + 
+                         r * (sin_mark * mark_r + cos_mark * mark_i);
         
-        if (!detect_carrier()) {
+        // Filtros ressonantes para espaço (980Hz)
+        float new_space_r = sample - r_pow_L * cos_space_L * delayed_sample + 
+                          r * (cos_space * space_r - sin_space * space_i);
+        float new_space_i = -r_pow_L * sin_space_L * delayed_sample + 
+                          r * (sin_space * space_r + cos_space * space_i);
+        
+        // Atualiza estados dos filtros
+        mark_r = new_mark_r;
+        mark_i = new_mark_i;
+        space_r = new_space_r;
+        space_i = new_space_i;
+        
+        // Calcula a diferença de energia
+        float decision = (space_r*space_r + space_i*space_i) - 
+                       (mark_r*mark_r + mark_i*mark_i);
+        
+        // Filtra a decisão
+        float filtered_decision = lowpass_filter(decision);
+        
+        // Atualiza estado da portadora
+        update_carrier_state(filtered_decision);
+        
+        // Decisão do bit
+        if (!carrier_state) {
             digital_samples[i] = 1; // Linha ociosa
-            last_bit = 1;
-            continue;
+        } else {
+            digital_samples[i] = decide_bit(filtered_decision);
         }
-        
-        last_bit = decide_bit();
-        digital_samples[i] = last_bit;
     }
     
     get_digital_samples(digital_samples, n);
