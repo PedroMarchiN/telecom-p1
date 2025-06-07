@@ -2,41 +2,41 @@
 #define V21_HPP
 
 #include <functional>
-#include <array>
-#include <vector>
 #include <cmath>
+#include <numbers>
 #include "config.hpp"
 
-class V21_RX {
+// Constantes globais (definidas no .cpp correspondente)
+extern int R;
+extern int fs;
+extern double T;
+extern int L;
+extern float r;
+extern float rL;
+extern float cos_omega0_L;
+extern float sin_omega0_L;
+extern float cos_omega0;
+extern float sin_omega0;
+extern float cos_omega1_L;
+extern float sin_omega1_L;
+extern float cos_omega1;
+extern float sin_omega1;
+
+class V21_RX
+{
 public:
     V21_RX(float omega_mark, float omega_space, std::function<void(const unsigned int *, unsigned int)> get_digital_samples)
-        : omega_mark(omega_mark), omega_space(omega_space),
-          get_digital_samples(get_digital_samples),
-          sampling_period(1.0f/SAMPLING_RATE),
-          r(0.99f),  // Fator de amortecimento
-          carrier_state(false),
-          carrier_hold_counter(0),
-          mark_r(0.0f), mark_i(0.0f),
-          space_r(0.0f), space_i(0.0f)
+        : omega_mark(omega_mark), omega_space(omega_space), get_digital_samples(get_digital_samples),
+          input_buffer(new float[L]()), input_buffer_index(0),
+          last_v0r(0.0f), last_v0i(0.0f), last_v1r(0.0f), last_v1i(0.0f),
+          x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f), threshold(1e-5f)
     {
-        // Calcula constantes dos filtros ressonantes
-        L = static_cast<int>(SAMPLING_RATE / 300);  // Taxa de símbolos (300 baud)
-        cos_mark = std::cos(omega_mark * sampling_period);
-        sin_mark = std::sin(omega_mark * sampling_period);
-        cos_space = std::cos(omega_space * sampling_period);
-        sin_space = std::sin(omega_space * sampling_period);
-        
-        // Constantes para os filtros ressonantes
-        r_pow_L = std::pow(r, L);
-        cos_mark_L = std::cos(omega_mark * L * sampling_period);
-        sin_mark_L = std::sin(omega_mark * L * sampling_period);
-        cos_space_L = std::cos(omega_space * L * sampling_period);
-        sin_space_L = std::sin(omega_space * L * sampling_period);
-        
-        // Inicializa buffer de atraso
-        delay_buffer.resize(L, 0.0f);
-        delay_index = 0;
-    };
+        std::memset(input_buffer, 0, L * sizeof(float));
+    }
+
+    ~V21_RX() {
+        delete[] input_buffer;
+    }
 
     void demodulate(const float *in_analog_samples, unsigned int n);
 
@@ -44,43 +44,25 @@ private:
     float omega_mark, omega_space;
     std::function<void(const unsigned int *, unsigned int)> get_digital_samples;
     
-    // Parâmetros dos filtros
-    float sampling_period;
-    float r;  // Fator de amortecimento
-    int L;    // Atraso em amostras
+    // Buffer circular para amostras de entrada
+    float* input_buffer;
+    int input_buffer_index;
     
     // Estados dos filtros ressonantes
-    float mark_r, mark_i;  // Componentes real e imaginário para marca
-    float space_r, space_i; // Componentes real e imaginário para espaço
+    float last_v0r, last_v0i;
+    float last_v1r, last_v1i;
     
-    // Constantes pré-calculadas
-    float cos_mark, sin_mark, cos_space, sin_space;
-    float r_pow_L, cos_mark_L, sin_mark_L, cos_space_L, sin_space_L;
+    // Estados do filtro IIR passa-baixas
+    float x1, x2, y1, y2;
     
-    // Buffer de atraso
-    std::vector<float> delay_buffer;
-    size_t delay_index;
-    
-    // Detecção de portadora
-    bool carrier_state;
-    int carrier_hold_counter;
-    const float CARRIER_THRESHOLD_HIGH = 120.0f;
-    const float CARRIER_THRESHOLD_LOW = 60.0f;
-    const int CARRIER_HOLD_COUNT = 50;
-    
-    // Filtro passa-baixa (corrigido para 3 coeficientes no numerador e 2 no denominador)
-    std::array<float, 3> b_coeffs = {0.0004166f, 0.0008332f, 0.0004166f};
-    std::array<float, 2> a_coeffs = {-1.99111f, 0.99116f}; // Removido o 1.0f inicial
-    std::array<float, 2> filter_state = {0.0f, 0.0f};
-    
-    float lowpass_filter(float input);
-    void update_carrier_state(float decision);
-    int decide_bit(float decision);
+    // Limiar para detecção de portadora
+    const float threshold;
 };
 
-class V21_TX {
+class V21_TX
+{
 public:
-    V21_TX(float omega_mark, float omega_space) : omega_mark(omega_mark), omega_space(omega_space), phase(0.f) {};
+    V21_TX(float omega_mark, float omega_space) :omega_mark(omega_mark),omega_space(omega_space),phase(0.f) {};
     void modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n);
 private:
     float omega_mark, omega_space;

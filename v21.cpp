@@ -1,105 +1,94 @@
-#include "v21.hpp"
-#include <algorithm>
+#include <cstring>
+#include <cmath>
 #include <numbers>
+#include "v21.hpp"
 
-float V21_RX::lowpass_filter(float input) {
-    // Implementação do filtro IIR passa-baixa (2ª ordem)
-    float output = b_coeffs[0] * input + filter_state[0];
-    filter_state[0] = b_coeffs[1] * input + a_coeffs[0] * output + filter_state[1];
-    filter_state[1] = b_coeffs[2] * input + a_coeffs[1] * output;
-    return output;
-}
+// Constantes globais
+int R = 300;
+int fs = 48000;
+double T = 1.0 / fs;
+int L = fs / R;
+float r = 0.99f;
 
-void V21_RX::update_carrier_state(float decision) {
-    float abs_decision = std::abs(decision);
-    
-    if (!carrier_state) {
-        // Estado sem portadora - verifica se deve entrar no estado com portadora
-        if (abs_decision > CARRIER_THRESHOLD_HIGH) {
-            carrier_state = true;
-            carrier_hold_counter = 0;
-        }
-    } else {
-        // Estado com portadora - verifica se deve sair
-        if (abs_decision < CARRIER_THRESHOLD_LOW) {
-            carrier_hold_counter++;
-            if (carrier_hold_counter >= CARRIER_HOLD_COUNT) {
-                carrier_state = false;
-            }
-        } else {
-            carrier_hold_counter = 0;
-        }
-    }
-}
+double omega0 = 2 * std::numbers::pi * 1850;
+double omega1 = 2 * std::numbers::pi * 1650;
 
-int V21_RX::decide_bit(float decision) {
-    // Histerese na decisão
-    const float HYSTERESIS = 20.0f;
-    static int last_bit = 1;
-    
-    if (decision > HYSTERESIS) {
-        last_bit = 1;
-    } else if (decision < -HYSTERESIS) {
-        last_bit = 0;
-    }
-    
-    return last_bit;
-}
+// Pré-calcular constantes
+float rL = powf(r, (float)L);
+float cos_omega0_L = cosf(omega0 * L * T);
+float sin_omega0_L = sinf(omega0 * L * T);
+float cos_omega0 = cosf(omega0 * T);
+float sin_omega0 = sinf(omega0 * T);
 
-void V21_RX::demodulate(const float *in_analog_samples, unsigned int n) {
+float cos_omega1_L = cosf(omega1 * L * T);
+float sin_omega1_L = sinf(omega1 * L * T);
+float cos_omega1 = cosf(omega1 * T);
+float sin_omega1 = sinf(omega1 * T);
+
+void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
+{
     unsigned int digital_samples[n];
     
+    // Coeficientes do filtro IIR passa-baixas
+    const float b[] = {0.00094469f, 0.00188938f, 0.00094469f};
+    const float a[] = {1.0f, -1.91119707f, 0.91497583f};
+
     for (unsigned int i = 0; i < n; i++) {
-        float sample = in_analog_samples[i];
+        float s_n = in_analog_samples[i];
         
-        // Atualiza buffer de atraso
-        float delayed_sample = delay_buffer[delay_index];
-        delay_buffer[delay_index] = sample;
-        delay_index = (delay_index + 1) % L;
+        // Obtém amostra atrasada do buffer circular
+        float s_n_L = input_buffer[input_buffer_index];
         
-        // Filtros ressonantes para marca (1180Hz)
-        float new_mark_r = sample - r_pow_L * cos_mark_L * delayed_sample + 
-                         r * (cos_mark * mark_r - sin_mark * mark_i);
-        float new_mark_i = -r_pow_L * sin_mark_L * delayed_sample + 
-                         r * (sin_mark * mark_r + cos_mark * mark_i);
+        // Atualiza buffer circular com nova amostra
+        input_buffer[input_buffer_index] = s_n;
+        input_buffer_index = (input_buffer_index + 1) % L;
+
+        // Filtro ressonante para 1850 Hz (marca)
+        float v0r = s_n - rL * cos_omega0_L * s_n_L + r * cos_omega0 * last_v0r - r * sin_omega0 * last_v0i;
+        float v0i =      - rL * sin_omega0_L * s_n_L + r * cos_omega0 * last_v0i + r * sin_omega0 * last_v0r;
         
-        // Filtros ressonantes para espaço (980Hz)
-        float new_space_r = sample - r_pow_L * cos_space_L * delayed_sample + 
-                          r * (cos_space * space_r - sin_space * space_i);
-        float new_space_i = -r_pow_L * sin_space_L * delayed_sample + 
-                          r * (sin_space * space_r + cos_space * space_i);
-        
+        // Filtro ressonante para 1650 Hz (espaço)
+        float v1r = s_n - rL * cos_omega1_L * s_n_L + r * cos_omega1 * last_v1r - r * sin_omega1 * last_v1i;
+        float v1i =      - rL * sin_omega1_L * s_n_L + r * cos_omega1 * last_v1i + r * sin_omega1 * last_v1r;
+
         // Atualiza estados dos filtros
-        mark_r = new_mark_r;
-        mark_i = new_mark_i;
-        space_r = new_space_r;
-        space_i = new_space_i;
+        last_v0r = v0r;
+        last_v0i = v0i;
+        last_v1r = v1r;
+        last_v1i = v1i;
+
+        // Calcula energias instantâneas
+        float energy_mark = v0r*v0r + v0i*v0i;
+        float energy_space = v1r*v1r + v1i*v1i;
+        float energy_diff = energy_space - energy_mark;
+
+        // Filtro IIR passa-baixas
+        float x0 = energy_diff;
+        float y0 = b[0]*x0 + b[1]*x1 + b[2]*x2 - a[1]*y1 - a[2]*y2;
         
-        // Calcula a diferença de energia
-        float decision = (space_r*space_r + space_i*space_i) - 
-                       (mark_r*mark_r + mark_i*mark_i);
-        
-        // Filtra a decisão
-        float filtered_decision = lowpass_filter(decision);
-        
-        // Atualiza estado da portadora
-        update_carrier_state(filtered_decision);
-        
-        // Decisão do bit
-        if (!carrier_state) {
-            digital_samples[i] = 1; // Linha ociosa
+        // Atualiza estados do filtro IIR
+        x2 = x1;
+        x1 = x0;
+        y2 = y1;
+        y1 = y0;
+
+        // Detecção de portadora e decisão
+        if ((energy_mark + energy_space) < threshold) {
+            digital_samples[i] = 1;  // Sem portadora - mantém linha ociosa
         } else {
-            digital_samples[i] = decide_bit(filtered_decision);
+            digital_samples[i] = (y0 > 0) ? 0 : 1;  // 0=espaço, 1=marca
         }
     }
-    
+
+    // Envia amostras digitais processadas
     get_digital_samples(digital_samples, n);
 }
 
-void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n) {
+void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n)
+{
     while (n--) {
-        *out_analog_samples++ = std::sin(phase);
-        phase += (*in_digital_samples++ ? omega_mark : omega_space) * SAMPLING_PERIOD;
-        phase = std::remainder(phase, 2*std::numbers::pi_v<float>);
+        *out_analog_samples++ = sin(phase);
+        phase += (*in_digital_samples++ ? omega_mark : omega_space) * T;
+        phase = fmod(phase, 2*std::numbers::pi);
     }
 }
