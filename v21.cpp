@@ -4,15 +4,25 @@
 
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
 {
-    unsigned int digital_samples[n];
+    digital_samples.clear();
+    digital_samples.reserve(n);
 
-    // substitua o loop abaixo, que gera um sinal UART constantemente ocioso,
-    // pelo seu código
-    for (int i = 0; i < n; i++) {
-        digital_samples[i] = 1;
+    for (unsigned int i = 0; i < n; ++i) {
+        float x      = in_analog_samples[i];
+        float y_mark = bp_mark.process(x);
+        float y_space= bp_space.process(x);
+        float y_diff = lp_diff.process(y_space - y_mark);
+
+        bool no_carrier = (std::fabs(y_mark) + std::fabs(y_space) < noise_floor);
+        unsigned int bit = no_carrier
+            ? 1u
+            : (y_diff > threshold ? 0u : 1u);
+
+        digital_samples.push_back(bit);
     }
 
-    get_digital_samples(digital_samples, n);
+    // entrega todos os bits de uma vez para a UART
+    get_digital_samples(digital_samples.data(), digital_samples.size());
 }
 
 void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n)
