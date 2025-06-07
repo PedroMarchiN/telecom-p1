@@ -28,11 +28,10 @@ class V21_RX
 public:
     V21_RX(float omega_mark, float omega_space, std::function<void(const unsigned int *, unsigned int)> get_digital_samples)
         : omega_mark(omega_mark), omega_space(omega_space), get_digital_samples(get_digital_samples),
-          input_buffer(new float[L]()),  // Inicialização correta
-          input_buffer_index(0),
+          input_buffer(new float[L]()), input_buffer_index(0),
           last_v0r(0.0f), last_v0i(0.0f), last_v1r(0.0f), last_v1i(0.0f),
-          x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f),
-          threshold(1e-3f)  // Aumentar limiar para 1e-3
+          x1(0.0f), x2(0.0f), y1(0.0f), y2(0.0f), threshold(1e-5f)
+    {}
 
     ~V21_RX() {
         delete[] input_buffer;
