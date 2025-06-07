@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <array>
+#include <vector>
 #include <cmath>
 #include "config.hpp"
 
@@ -14,11 +15,10 @@ public:
           sampling_period(1.0f/SAMPLING_RATE),
           r(0.99f),  // Fator de amortecimento
           carrier_state(false),
-          carrier_hold_counter(0)
+          carrier_hold_counter(0),
+          mark_r(0.0f), mark_i(0.0f),
+          space_r(0.0f), space_i(0.0f)
     {
-        // Inicializa os estados dos filtros
-        mark_i = mark_r = space_i = space_r = 0.0f;
-        
         // Calcula constantes dos filtros ressonantes
         L = static_cast<int>(SAMPLING_RATE / 300);  // Taxa de símbolos (300 baud)
         cos_mark = std::cos(omega_mark * sampling_period);
@@ -68,9 +68,9 @@ private:
     const float CARRIER_THRESHOLD_LOW = 60.0f;
     const int CARRIER_HOLD_COUNT = 50;
     
-    // Filtro passa-baixa
+    // Filtro passa-baixa (corrigido para 3 coeficientes no numerador e 2 no denominador)
     std::array<float, 3> b_coeffs = {0.0004166f, 0.0008332f, 0.0004166f};
-    std::array<float, 2> a_coeffs = {1.0f, -1.99111f, 0.99116f};
+    std::array<float, 2> a_coeffs = {-1.99111f, 0.99116f}; // Removido o 1.0f inicial
     std::array<float, 2> filter_state = {0.0f, 0.0f};
     
     float lowpass_filter(float input);

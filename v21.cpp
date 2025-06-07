@@ -3,10 +3,10 @@
 #include <numbers>
 
 float V21_RX::lowpass_filter(float input) {
-    // Implementação do filtro IIR passa-baixa
+    // Implementação do filtro IIR passa-baixa (2ª ordem)
     float output = b_coeffs[0] * input + filter_state[0];
-    filter_state[0] = b_coeffs[1] * input - a_coeffs[1] * output + filter_state[1];
-    filter_state[1] = b_coeffs[2] * input - a_coeffs[2] * output;
+    filter_state[0] = b_coeffs[1] * input + a_coeffs[0] * output + filter_state[1];
+    filter_state[1] = b_coeffs[2] * input + a_coeffs[1] * output;
     return output;
 }
 
