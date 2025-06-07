@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 #include "config.hpp"
+#include <cstring>
 
 // Constantes globais (definidas no .cpp correspondente)
 extern int R;
