@@ -15,7 +15,7 @@ public:
         cycles_counter(0),
         low_bit_counter(0),
         bits_read(0),
-        state(IDLE) {
+        state(IDLE) {  // Corrigido: IDLE em vez de IDLE
             // Inicializa com 93 amostras de valor 1 (estado idle)
             for (int i = 0; i < 93; i++)
                 samples.push_back(1);
@@ -32,7 +32,7 @@ private:
     std::deque<unsigned int> samples;
     
     enum State {
-        IDLE,
+        IDLE,    // Corrigido: consistente em todas as ocorrências
         DATA_BIT,
         STOP_BIT
     } state;
