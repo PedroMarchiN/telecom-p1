@@ -35,29 +35,21 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
 
     for (unsigned int i = 0; i < n; i++) {
         float s_n = in_analog_samples[i];
-        
-        // Obtém amostra atrasada do buffer circular
         float s_n_L = input_buffer[input_buffer_index];
-        
-        // Atualiza buffer circular com nova amostra
         input_buffer[input_buffer_index] = s_n;
         input_buffer_index = (input_buffer_index + 1) % L;
 
-        // Filtro ressonante para 1850 Hz (marca)
+        // Filtros ressonantes
         float v0r = s_n - rL * cos_omega0_L * s_n_L + r * cos_omega0 * last_v0r - r * sin_omega0 * last_v0i;
         float v0i =      - rL * sin_omega0_L * s_n_L + r * cos_omega0 * last_v0i + r * sin_omega0 * last_v0r;
-        
-        // Filtro ressonante para 1650 Hz (espaço)
         float v1r = s_n - rL * cos_omega1_L * s_n_L + r * cos_omega1 * last_v1r - r * sin_omega1 * last_v1i;
         float v1i =      - rL * sin_omega1_L * s_n_L + r * cos_omega1 * last_v1i + r * sin_omega1 * last_v1r;
 
-        // Atualiza estados dos filtros
         last_v0r = v0r;
         last_v0i = v0i;
         last_v1r = v1r;
         last_v1i = v1i;
 
-        // Calcula energias instantâneas
         float energy_mark = v0r*v0r + v0i*v0i;
         float energy_space = v1r*v1r + v1i*v1i;
         float energy_diff = energy_space - energy_mark;
@@ -65,22 +57,22 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
         // Filtro IIR passa-baixas
         float x0 = energy_diff;
         float y0 = b[0]*x0 + b[1]*x1 + b[2]*x2 - a[1]*y1 - a[2]*y2;
-        
-        // Atualiza estados do filtro IIR
+
+        // Atualizar estados do filtro
         x2 = x1;
         x1 = x0;
         y2 = y1;
         y1 = y0;
 
-        // Detecção de portadora e decisão
+        // Correção crucial: inverter a decisão dos bits!
         if ((energy_mark + energy_space) < threshold) {
-            digital_samples[i] = 1;  // Sem portadora - mantém linha ociosa
+            digital_samples[i] = 1;  // Sem portadora - linha ociosa
         } else {
-            digital_samples[i] = (y0 > 0) ? 0 : 1;  // 0=espaço, 1=marca
+            // Tom de espaço (0) deve ter energia MAIOR que tom de marca (1)
+            digital_samples[i] = (y0 > 0) ? 0 : 1;  // 0 = espaço, 1 = marca
         }
     }
 
-    // Envia amostras digitais processadas
     get_digital_samples(digital_samples, n);
 }
 
