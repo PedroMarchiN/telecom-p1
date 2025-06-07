@@ -3,62 +3,53 @@
 #include "uart.hpp"
 #include <deque>
 
-void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
-{
-    enum State { IDLE, RECEIVING };
-    static State state = IDLE;
-
-    static std::deque<unsigned int> window;
-    static int sample_index = 0;
-    static int bit_index = 0;
-    static uint8_t current_byte = 0;
-    static int wait_for = 0;
-
-    for (unsigned int i = 0; i < n; ++i) {
+void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
+    for (unsigned int i = 0; i < n; i++) {
         unsigned int sample = buffer[i];
-
-        if (state == IDLE) {
-            // Preencher a janela com as últimas 30 amostras
-            window.push_back(sample);
-            if (window.size() > 30)
-                window.pop_front();
-
-            // Se a amostra atual é 0 (início do start bit)
-            if (sample == 0 && window.size() == 30) {
-                int low_count = 0;
-                for (auto s : window)
-                    if (s == 0) low_count++;
-
-                if (low_count >= 25) {
-                    // Transita para RECEIVING
-                    state = RECEIVING;
-                    sample_index = 0;
-                    bit_index = 0;
-                    current_byte = 0;
-                    wait_for = 15+160;
-                    window.clear();
-                }
-            }
+        
+        // Atualiza a janela deslizante
+        samples.push_front(sample);
+        
+        // Atualiza contador de bits baixos
+        if (sample == 0) low_bit_counter++;
+        if (samples.size() > 93) {
+            if (samples.back() == 0) low_bit_counter--;
+            samples.pop_back();
         }
-        else if (state == RECEIVING) {
-            // Conta amostras desde o meio do start bit
-            sample_index++;
 
-            // Quando alcançamos o marco de amostragem:
-            if (sample_index == wait_for) {
-                if (bit_index < 8) {
-                    current_byte |= (sample & 1) << bit_index;
-                    bit_index++;
-                    // programa o próximo marco
-                    wait_for += 160;
+        switch (state) {
+            case IDLE:
+                if (low_bit_counter >= 25 && samples[46] == 0) {
+                    // Detectado start bit válido
+                    cycles_counter = 15;  // Ponto de amostragem do 1º bit
+                    byte = 0;
+                    bits_read = 0;
+                    state = DATA_BIT;
                 }
-                else {
-                    // Chegou ao stop bit: entrega o byte e volta a IDLE
-                    get_byte(current_byte);
+                break;
+                
+            case DATA_BIT:
+                cycles_counter++;
+                if (cycles_counter == 160) {
+                    // Amostra o bit no momento correto
+                    byte |= (samples[0] & 1) << bits_read;
+                    bits_read++;
+                    cycles_counter = 0;
+                    
+                    if (bits_read == 8) {
+                        state = STOP_BIT;
+                    }
+                }
+                break;
+                
+            case STOP_BIT:
+                cycles_counter++;
+                if (cycles_counter == 160) {
+                    // Final do stop bit
+                    get_byte(byte);
                     state = IDLE;
-                    window.clear();
                 }
-            }
+                break;
         }
     }
 }
