@@ -10,23 +10,33 @@
 class UART_RX
 {
 public:
+    //fuction to get bytes changed
     UART_RX(std::function<void(uint8_t)> get_byte) :
+        // initializing values as 0
         get_byte(get_byte), 
         byte(0),
-        cycles_counter(0),
-        low_bit_counter(0),
-        bits_read(0),
+        //lowCounter(0),
+        clockCounter(0),
+        bitsCounter(0),
+        
+        //puts in indle state
         state(IDLE) {
             for (int i = 0; i < 96; i++)
                 this->samples.push_front(1);
         }
     void put_samples(const unsigned int *buffer, unsigned int n);
+
 private:
     std::function<void(uint8_t)> get_byte;
-    uint8_t byte;
-    unsigned int cycles_counter;
-    unsigned int low_bit_counter;
-    unsigned int bits_read;
+
+    uint8_t byte; //information received
+
+    //counters
+    int clockCounter; 
+    //int lowCounter;
+    int bitsCounter;
+
+    //double ended queue
     std::deque<unsigned int> samples;
     enum {
         IDLE,

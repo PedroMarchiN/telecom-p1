@@ -5,43 +5,45 @@
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
+    int lowCounter = 0;
+
     for (int i = 0; i < n; i++) {
         this->samples.push_front(buffer[i]);
         if (this->samples[0] == 0)
-            this->low_bit_counter++;
+            lowCounter++;
         if (this->samples[30] == 0)
-            this->low_bit_counter--;  
+            lowCounter--;  
 
         switch (state) {
             case IDLE:
-                if (low_bit_counter >= 25 && this->samples[96] == 0) {
-                    // This is a start bit!
-                    this->cycles_counter = 15; // after midbit (79 out of 160)
+                if (lowCounter >= 25 && this->samples[96] == 0) {
+                    this->clockCounter = 15; // after midbit (79 out of 160)
                     this->byte = 0;
-                    this->bits_read = 0;
+                    this->bitsCounter = 0;
                     this->state = DATA_BIT;
                 }
 
                 break;
 
             case DATA_BIT:
-                if (this->cycles_counter == 159) {
-                    this->byte += this->samples[0] << this->bits_read;
-                    this->bits_read++;
-                    this->cycles_counter = 0;
-                    if (this->bits_read == 8) 
+                if (this->clockCounter == 159) {
+                    this->byte += this->samples[0] << this->bitsCounter;
+                    this->bitsCounter++;
+                    this->clockCounter = 0;
+                    if (this->bitsCounter == 8) 
                         this->state = STOP_BIT;
                 } else
-                    this->cycles_counter++; 
+                    this->clockCounter++; 
 
                 break;
 
             case STOP_BIT:
-                if (this->cycles_counter == 159) {
+                if (this->clockCounter == 159) {
                     this->get_byte(this->byte);
+                    lowCounter = 0;
                     this->state = IDLE;
                 } else
-                    this->cycles_counter++;
+                    this->clockCounter++;
                 break;
 
             default: break;
