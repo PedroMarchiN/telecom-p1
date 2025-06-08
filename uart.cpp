@@ -23,7 +23,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
                 for (auto s : window)
                     if (s == 0) low_count++;
 
-                if (low_count >= 25) {
+                if (low_count >= 20) {
                     state = RECEIVING;
                     sample_index = 0;
                     bit_index = 0;
