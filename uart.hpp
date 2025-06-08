@@ -18,8 +18,6 @@ public:
         bits_read(0),
         state(IDLE) {
             for (int i = 0; i < 93; i++)
-                // Pretend it's been idle for this long
-                // (reduces the number of ifs needed)
                 this->samples.push_front(1);
         }
     void put_samples(const unsigned int *buffer, unsigned int n);
