@@ -5,12 +5,17 @@
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
-    for (unsigned int i = 0; i < n; i++) {
+    this->byte = 0;
+    this->cycles_counter = 0;
+    this->low_bit_counter = 0;
+    this->bits_read = 0;
+
+    for (int i = 0; i < n; i++) {
         this->samples.push_front(buffer[i]);
         if (this->samples[0] == 0)
             this->low_bit_counter++;
         if (this->samples[30] == 0)
-            this->low_bit_counter--; // low bit leaving the window 
+            this->low_bit_counter--;  
 
         switch (state) {
             case IDLE:
