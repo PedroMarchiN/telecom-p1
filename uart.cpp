@@ -14,7 +14,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 
         switch (state) {
             case IDLE:
-                if (low_bit_counter >= 25 && this->samples[windowSize] == 0) {
+                if (low_bit_counter >= 25 && this->samples[96] == 0) {
                     // This is a start bit!
                     this->cycles_counter = 15; // after midbit (79 out of 160)
                     this->byte = 0;
