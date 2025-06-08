@@ -28,7 +28,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
                     sample_index = 0;
                     bit_index = 0;
                     current_byte = 0;
-                    wait_for = 50 + 160; // Meio do start bit + período de bit
+                    wait_for = 80 + 160; // Meio do start bit + período de bit
                     window.clear();
                 }
             }
