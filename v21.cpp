@@ -2,10 +2,7 @@
 #include <deque>
 #include <cmath>
 #include <numbers>
-
-// Constantes globais
-int SAMPLES_PER_SYMBOL = 160; // fs=48000, R=300 bauds
-float SAMPLING_PERIOD = 1.0f / 48000.0f;
+#include "config.hpp"
 
 // Implementação do receptor
 V21_RX::V21_RX(float omega_mark, float omega_space, 
