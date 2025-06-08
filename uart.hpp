@@ -7,27 +7,23 @@
 #include <stdint.h>
 #include "config.hpp"
 
-class UART_RX
-{
+class UART_RX {
 public:
-    UART_RX(std::function<void(uint8_t)> get_byte) :
-        get_byte(get_byte),
-        byte(0),
-        samples(96, 1),  // Inicializa com 96 valores 1
-        state(IDLE) {}
-        
+    UART_RX(std::function<void(uint8_t)> get_byte);
     void put_samples(const unsigned int *buffer, unsigned int n);
 
 private:
     std::function<void(uint8_t)> get_byte;
-    uint8_t byte;
-    std::deque<unsigned int> samples;
     
-    enum State {
-        IDLE,
-        DATA_BIT,
-        STOP_BIT
-    } state;
+    // Estado da máquina de estados
+    enum State { IDLE, RECEIVING } state;
+    
+    // Contadores e buffers por instância
+    std::deque<unsigned int> window;
+    int sample_index;
+    int bit_index;
+    uint8_t current_byte;
+    int wait_for;
 };
 
 class UART_TX

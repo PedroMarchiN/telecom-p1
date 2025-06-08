@@ -1,59 +1,53 @@
 #include "uart.hpp"
 #include <deque>
 
-void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
-{
-    // Variáveis movidas para o escopo da função (static para manter estado)
-    static int clockCounter = 0;
-    static int lowCounter = 0;
-    static int bitsCounter = 0;
+UART_RX::UART_RX(std::function<void(uint8_t)> get_byte) 
+    : get_byte(get_byte),
+      state(IDLE),
+      sample_index(0),
+      bit_index(0),
+      current_byte(0),
+      wait_for(0) {}
 
-    for (int i = 0; i < n; i++) {
-        this->samples.push_front(buffer[i]);
-        if (this->samples[0] == 0)
-            lowCounter++;
-        if (this->samples[30] == 0)
-            lowCounter--;  
+void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
+    for (unsigned int i = 0; i < n; ++i) {
+        unsigned int sample = buffer[i];
 
-        switch (state) {
-            case IDLE:
-                if (lowCounter >= 25 && this->samples[96] == 0) {
-                    clockCounter = 15; // after midbit (79 out of 160)
-                    this->byte = 0;
-                    bitsCounter = 0;
-                    state = DATA_BIT;
+        if (state == IDLE) {
+            window.push_back(sample);
+            if (window.size() > 30)
+                window.pop_front();
+
+            if (sample == 0 && window.size() == 30) {
+                int low_count = 0;
+                for (auto s : window)
+                    if (s == 0) low_count++;
+
+                if (low_count >= 25) {
+                    state = RECEIVING;
+                    sample_index = 0;
+                    bit_index = 0;
+                    current_byte = 0;
+                    wait_for = 50 + 160; // Meio do start bit + período de bit
+                    window.clear();
                 }
-                break;
-
-            case DATA_BIT:
-                if (clockCounter == 159) {
-                    this->byte += this->samples[0] << bitsCounter;
-                    bitsCounter++;
-                    clockCounter = 0;
-                    if (bitsCounter == 8) 
-                        state = STOP_BIT;
-                } else {
-                    clockCounter++; 
-                }
-                break;
-
-            case STOP_BIT:
-                if (clockCounter == 159) {
-                    this->get_byte(this->byte);
-                    state = IDLE;
-                    // Reinicializa os contadores ao voltar para IDLE
-                    clockCounter = 0;
-                    lowCounter = 0;
-                    bitsCounter = 0;
-                } else {
-                    clockCounter++;
-                }
-                break;
-
-            default: break;
+            }
         }
-
-        this->samples.pop_back();
+        else if (state == RECEIVING) {
+            sample_index++;
+            if (sample_index == wait_for) {
+                if (bit_index < 8) {
+                    current_byte |= (sample & 1) << bit_index;
+                    bit_index++;
+                    wait_for += 160; // Próximo bit
+                }
+                else {
+                    get_byte(current_byte);
+                    state = IDLE;
+                    window.clear();
+                }
+            }
+        }
     }
 }
 
