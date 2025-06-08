@@ -1,126 +1,86 @@
-#include <cstdio>
-#include <math.h>
+#include <cstring>
+#include <cmath>
 #include <numbers>
 #include "v21.hpp"
 
-constexpr float BANDPASS_SMOOTHING = 0.99;
+// Constantes globais
+int R = 300;
+int fs = 48000;
+double T = 1.0 / fs;
+int L = fs / R;
+float r = 0.99f;
 
-V21_RX::V21_RX(float omega_mark, float omega_space, std::function<void(const unsigned int *, unsigned int)> get_digital_samples) :
-    omega_mark(omega_mark),
-    omega_space(omega_space),
-    get_digital_samples(get_digital_samples) 
-{
-    // Filling buffers with "empty" values
-    for (int i = 0; i < SAMPLES_PER_SYMBOL; i++)
-        this->sample_buffer.push_front(0.f);
-    this->vspace_r_buffer = 0.f;
-    this->vspace_i_buffer = 0.f;
-    this->vmark_r_buffer = 0.f;
-    this->vmark_i_buffer = 0.f;
-    this->raw_decision_buffer[0] = 0.f;
-    this->raw_decision_buffer[1] = 0.f;
-    this->filtered_decision_buffer[0] = 0.f;
-    this->filtered_decision_buffer[1] = 0.f;
-    this->low_difference_counter = 0;
+double omega0 = 2 * std::numbers::pi * 1850;
+double omega1 = 2 * std::numbers::pi * 1650;
 
-    // Low-pass Butterworth filter generated with scipy.signal
-    this->lp_numerator[0] = 0.00037506961629696616f;
-    this->lp_numerator[1] = 0.0007501392325939323f;
-    this->lp_numerator[2] = 0.00037506961629696616f;
-    this->lp_denominator[0] = 1.f;
-    this->lp_denominator[1] = -1.9444776577670935f;
-    this->lp_denominator[2] = 0.9459779362322813f;
+// Pré-calcular constantes
+float rL = powf(r, (float)L);
+float cos_omega0_L = cosf(omega0 * L * T);
+float sin_omega0_L = sinf(omega0 * L * T);
+float cos_omega0 = cosf(omega0 * T);
+float sin_omega0 = sinf(omega0 * T);
 
-    // Precomputing sines and cosines
-    this->rl_cos_space =
-        pow(BANDPASS_SMOOTHING, SAMPLES_PER_SYMBOL)
-        * cos(omega_space * SAMPLES_PER_SYMBOL * SAMPLING_PERIOD); 
-    this->rl_sin_space =
-        pow(BANDPASS_SMOOTHING, SAMPLES_PER_SYMBOL)
-        * sin(omega_space * SAMPLES_PER_SYMBOL * SAMPLING_PERIOD); 
-    this->r_cos_space = BANDPASS_SMOOTHING * cos(omega_space * SAMPLING_PERIOD); 
-    this->r_sin_space = BANDPASS_SMOOTHING * sin(omega_space * SAMPLING_PERIOD); 
-
-    this->rl_cos_mark =
-        pow(BANDPASS_SMOOTHING, SAMPLES_PER_SYMBOL)
-        * cos(omega_mark * SAMPLES_PER_SYMBOL * SAMPLING_PERIOD); 
-    this->rl_sin_mark =
-        pow(BANDPASS_SMOOTHING, SAMPLES_PER_SYMBOL)
-        * sin(omega_mark * SAMPLES_PER_SYMBOL * SAMPLING_PERIOD); 
-    this->r_cos_mark = BANDPASS_SMOOTHING * cos(omega_mark * SAMPLING_PERIOD); 
-    this->r_sin_mark = BANDPASS_SMOOTHING * sin(omega_mark * SAMPLING_PERIOD); 
-};
+float cos_omega1_L = cosf(omega1 * L * T);
+float sin_omega1_L = sinf(omega1 * L * T);
+float cos_omega1 = cosf(omega1 * T);
+float sin_omega1 = sinf(omega1 * T);
 
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
 {
     unsigned int digital_samples[n];
-    const int L = SAMPLES_PER_SYMBOL;
+    
+    // Coeficientes do filtro IIR passa-baixas
+    const float b[] = {0.00094469f, 0.00188938f, 0.00094469f};
+    const float a[] = {1.0f, -1.91119707f, 0.91497583f};
 
-    for (int i = 0; i < n; i++) {
-        this->sample_buffer.push_front(in_analog_samples[i]);
+    for (unsigned int i = 0; i < n; i++) {
+        float s_n = in_analog_samples[i];
+        
+        // Obtém amostra atrasada do buffer circular
+        float s_n_L = input_buffer[input_buffer_index];
+        
+        // Atualiza buffer circular com nova amostra
+        input_buffer[input_buffer_index] = s_n;
+        input_buffer_index = (input_buffer_index + 1) % L;
 
-        float vspace_r = this->sample_buffer[0] - this->rl_cos_space * this->sample_buffer[L]
-                            + this->r_cos_space * this->vspace_r_buffer - this->r_sin_space * vspace_i_buffer;
-        float vspace_i = -this->rl_sin_space * this->sample_buffer[L] + this->r_cos_space * vspace_i_buffer
-                            + this->r_sin_space * vspace_r_buffer;
-        float vmark_r = this->sample_buffer[0] - this->rl_cos_mark * this->sample_buffer[L]
-                            + this->r_cos_mark * this->vmark_r_buffer - this->r_sin_mark * vmark_i_buffer;
-        float vmark_i = -this->rl_sin_mark * this->sample_buffer[L] + this->r_cos_mark * vmark_i_buffer
-                            + this->r_sin_mark * vmark_r_buffer;
+        // Filtro ressonante para 1850 Hz (marca)
+        float v0r = s_n - rL * cos_omega0_L * s_n_L + r * cos_omega0 * last_v0r - r * sin_omega0 * last_v0i;
+        float v0i =      - rL * sin_omega0_L * s_n_L + r * cos_omega0 * last_v0i + r * sin_omega0 * last_v0r;
+        
+        // Filtro ressonante para 1650 Hz (espaço)
+        float v1r = s_n - rL * cos_omega1_L * s_n_L + r * cos_omega1 * last_v1r - r * sin_omega1 * last_v1i;
+        float v1i =      - rL * sin_omega1_L * s_n_L + r * cos_omega1 * last_v1i + r * sin_omega1 * last_v1r;
 
-        float raw_decision = vmark_r * vmark_r + vmark_i * vmark_i -
-                                vspace_r * vspace_r - vspace_i * vspace_i; 
+        // Atualiza estados dos filtros
+        last_v0r = v0r;
+        last_v0i = v0i;
+        last_v1r = v1r;
+        last_v1i = v1i;
 
-        // a[0]*y[n] = b[0]*x[n] + b[1]*x[n-1] + ... + b[M]*x[n-M]
-        //               - a[1]*y[n-1] - ... - a[N]*y[n-N]
-        float filtered_decision = 
-            this->lp_numerator[0] * raw_decision
-            + this->lp_numerator[1] * this->raw_decision_buffer[0]
-            + this->lp_numerator[2] * this->raw_decision_buffer[1]
-            - this->lp_denominator[1] * this->filtered_decision_buffer[0]
-            - this->lp_denominator[2] * this->filtered_decision_buffer[1];
-        filtered_decision /= this->lp_denominator[0];
+        // Calcula energias instantâneas
+        float energy_mark = v0r*v0r + v0i*v0i;
+        float energy_space = v1r*v1r + v1i*v1i;
+        float energy_diff = energy_space - energy_mark;
 
-        switch (this->state) {
-            case IDLE:
-                if (abs(filtered_decision) > 120) {
-                    digital_samples[i] = filtered_decision > 0 ? 1 : 0;
-                    this->low_difference_counter = 0;
-                    this->state = CARRIER_DETECTED;
-                } else
-                    digital_samples[i] = 1;
+        // Filtro IIR passa-baixas
+        float x0 = energy_diff;
+        float y0 = b[0]*x0 + b[1]*x1 + b[2]*x2 - a[1]*y1 - a[2]*y2;
+        
+        // Atualiza estados do filtro IIR
+        x2 = x1;
+        x1 = x0;
+        y2 = y1;
+        y1 = y0;
 
-                break;
-
-            case CARRIER_DETECTED:
-                if (abs(filtered_decision) < 60)
-                    this->low_difference_counter++;
-                else
-                    this->low_difference_counter = 0;
-
-                if (this->low_difference_counter >= 50) {
-                    digital_samples[i] = 1;
-                    this->state = IDLE;
-                } else
-                    digital_samples[i] = filtered_decision > 0 ? 1 : 0;
-
-                break;
-
-            default: break;
+        // Detecção de portadora e decisão
+        if ((energy_mark + energy_space) < threshold) {
+            digital_samples[i] = 1;  // Sem portadora - mantém linha ociosa
+        } else {
+            digital_samples[i] = (y0 > 0) ? 0 : 1;  // 0=espaço, 1=marca
         }
-
-        // Updating buffers 
-        this->sample_buffer.pop_back();
-        this->vspace_r_buffer = vspace_r;
-        this->vspace_i_buffer = vspace_i;
-        this->vmark_r_buffer = vmark_r;
-        this->vmark_i_buffer = vmark_i;
-        this->raw_decision_buffer[1] = this->raw_decision_buffer[0];
-        this->raw_decision_buffer[0] = raw_decision;
-        this->filtered_decision_buffer[1] = this->filtered_decision_buffer[0];
-        this->filtered_decision_buffer[0] = filtered_decision;
     }
 
+    // Envia amostras digitais processadas
     get_digital_samples(digital_samples, n);
 }
 
@@ -128,9 +88,7 @@ void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_
 {
     while (n--) {
         *out_analog_samples++ = sin(phase);
-        phase += (*in_digital_samples++ ? omega_mark : omega_space) * SAMPLING_PERIOD;
-
-        // evita que phase cresça indefinidamente, o que causaria perda de precisão
-        phase = remainder(phase, 2*std::numbers::pi);
+        phase += (*in_digital_samples++ ? omega_mark : omega_space) * T;
+        phase = fmod(phase, 2*std::numbers::pi);
     }
 }

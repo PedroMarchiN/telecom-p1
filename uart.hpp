@@ -14,12 +14,10 @@ public:
 
 private:
     std::function<void(uint8_t)> get_byte;
-    
-    // Estado da máquina de estados
     enum State { IDLE, RECEIVING } state;
-    
-    // Contadores e buffers por instância
     std::deque<unsigned int> window;
+
+    //contadores
     int sample_index;
     int bit_index;
     uint8_t current_byte;
