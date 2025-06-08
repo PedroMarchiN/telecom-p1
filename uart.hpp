@@ -15,7 +15,7 @@ public:
         // initializing values as 0
         get_byte(get_byte), 
         byte(0),
-        //lowCounter(0),
+        lowCounter(0),
         clockCounter(0),
         bitsCounter(0),
         
@@ -33,7 +33,7 @@ private:
 
     //counters
     int clockCounter; 
-    //int lowCounter;
+    int lowCounter;
     int bitsCounter;
 
     //double ended queue

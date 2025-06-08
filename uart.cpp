@@ -5,18 +5,17 @@
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
-    int lowCounter = 0;
 
     for (int i = 0; i < n; i++) {
         this->samples.push_front(buffer[i]);
         if (this->samples[0] == 0)
-            lowCounter++;
+            this->lowCounter++;
         if (this->samples[30] == 0)
-            lowCounter--;  
+            this->lowCounter--;  
 
         switch (state) {
             case IDLE:
-                if (lowCounter >= 25 && this->samples[96] == 0) {
+                if (this->lowCounter >= 25 && this->samples[96] == 0) {
                     this->clockCounter = 15; // after midbit (79 out of 160)
                     this->byte = 0;
                     this->bitsCounter = 0;
@@ -40,7 +39,6 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
             case STOP_BIT:
                 if (this->clockCounter == 159) {
                     this->get_byte(this->byte);
-                    lowCounter = 0;
                     this->state = IDLE;
                 } else
                     this->clockCounter++;
