@@ -3,7 +3,7 @@
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
-    
+    // Variáveis movidas para o escopo da função (static para manter estado)
     static int clockCounter = 0;
     static int lowCounter = 0;
     static int bitsCounter = 0;
@@ -32,16 +32,22 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                     clockCounter = 0;
                     if (bitsCounter == 8) 
                         state = STOP_BIT;
-                } else
+                } else {
                     clockCounter++; 
+                }
                 break;
 
             case STOP_BIT:
                 if (clockCounter == 159) {
                     this->get_byte(this->byte);
                     state = IDLE;
-                } else
+                    // Reinicializa os contadores ao voltar para IDLE
+                    clockCounter = 0;
+                    lowCounter = 0;
+                    bitsCounter = 0;
+                } else {
                     clockCounter++;
+                }
                 break;
 
             default: break;
@@ -50,7 +56,6 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
         this->samples.pop_back();
     }
 }
-
 
 
 void UART_TX::put_byte(uint8_t byte)
