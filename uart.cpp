@@ -15,21 +15,19 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
 
         if (state == IDLE) {
             window.push_back(sample);
-            if (window.size() > 50)
-                window.pop_front();
+            if (window.size() > 50) window.pop_front();
 
             if (sample == 0 && window.size() == 50) {
                 int low_count = 0;
-                for (auto s : window)
-                    if (s == 0) low_count++;
+                for (auto s : window) low_count += (s == 0);
 
-                if (low_count >= 30) {
+                if (low_count >= 30) {  // 60% das amostras baixas
                     state = RECEIVING;
                     sample_index = 0;
                     bit_index = 0;
                     current_byte = 0;
-                    wait_for = 50 + 160; // Meio do start bit + período de bit
-                    window.clear();
+                    wait_for = 30 + 160;  // Meio do start bit (80) + período (160)
+                    window.clear();  // Limpa para o próximo ciclo
                 }
             }
         }
