@@ -7,10 +7,6 @@
 #include <numbers>
 #include "config.hpp"
 
-// Constantes pré-calculadas (definidas no .cpp correspondente)
-extern int SAMPLES_PER_SYMBOL;
-extern float SAMPLING_PERIOD;
-
 class V21_RX
 {
 public:
