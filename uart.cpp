@@ -1,47 +1,47 @@
 #include "uart.hpp"
-
-#include "uart.hpp"
 #include <deque>
 
 void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
 {
+    
+    static int clockCounter = 0;
+    static int lowCounter = 0;
+    static int bitsCounter = 0;
 
     for (int i = 0; i < n; i++) {
         this->samples.push_front(buffer[i]);
         if (this->samples[0] == 0)
-            this->lowCounter++;
+            lowCounter++;
         if (this->samples[30] == 0)
-            this->lowCounter--;  
+            lowCounter--;  
 
         switch (state) {
             case IDLE:
-                if (this->lowCounter >= 25 && this->samples[96] == 0) {
-                    this->clockCounter = 15; // after midbit (79 out of 160)
+                if (lowCounter >= 25 && this->samples[96] == 0) {
+                    clockCounter = 15; // after midbit (79 out of 160)
                     this->byte = 0;
-                    this->bitsCounter = 0;
-                    this->state = DATA_BIT;
+                    bitsCounter = 0;
+                    state = DATA_BIT;
                 }
-
                 break;
 
             case DATA_BIT:
-                if (this->clockCounter == 159) {
-                    this->byte += this->samples[0] << this->bitsCounter;
-                    this->bitsCounter++;
-                    this->clockCounter = 0;
-                    if (this->bitsCounter == 8) 
-                        this->state = STOP_BIT;
+                if (clockCounter == 159) {
+                    this->byte += this->samples[0] << bitsCounter;
+                    bitsCounter++;
+                    clockCounter = 0;
+                    if (bitsCounter == 8) 
+                        state = STOP_BIT;
                 } else
-                    this->clockCounter++; 
-
+                    clockCounter++; 
                 break;
 
             case STOP_BIT:
-                if (this->clockCounter == 159) {
+                if (clockCounter == 159) {
                     this->get_byte(this->byte);
-                    this->state = IDLE;
+                    state = IDLE;
                 } else
-                    this->clockCounter++;
+                    clockCounter++;
                 break;
 
             default: break;
