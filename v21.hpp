@@ -4,6 +4,7 @@
 #include <functional>
 #include <cmath>
 #include <numbers>
+#include <cstring>
 #include "config.hpp"
 
 // Constantes globais (definidas no .cpp correspondente)
