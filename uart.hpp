@@ -7,13 +7,19 @@
 #include <stdint.h>
 #include "config.hpp"
 
+#define windowSize 96
+
 class UART_RX
 {
 public:
     UART_RX(std::function<void(uint8_t)> get_byte) :
         get_byte(get_byte), 
+        byte(0),
+        cycles_counter(0),
+        low_bit_counter(0),
+        bits_read(0),
         state(IDLE) {
-            for (int i = 0; i < 93; i++)
+            for (int i = 0; i < windowSize; i++)
                 this->samples.push_front(1);
         }
     void put_samples(const unsigned int *buffer, unsigned int n);
