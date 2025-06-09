@@ -4,10 +4,10 @@
 #include <array>
 #include <algorithm>
 
-constexpr float CUTOFF_FREQ = 350.0f; // Frequência de corte ajustada
+constexpr float CUTOFF_FREQ = 350.0f;
 
 V21_RX::V21_RX(float omega_mark, float omega_space, 
-               std::function<void(const unsigned int *, unsigned int)> get_digital_samples) :
+               std::function<void(const unsigned int*, unsigned int)> get_digital_samples) :
     MARK_FREQ(omega_mark),
     SPACE_FREQ(omega_space),
     get_digital_samples(get_digital_samples)
@@ -17,7 +17,7 @@ V21_RX::V21_RX(float omega_mark, float omega_space,
     std::fill_n(energy_history, 5, 0.0f);
 
     const int N = FIR_TAPS - 1;
-    const float fc = CUTOFF_FREQ / (SAMPLE_RATE / 2);
+    const float fc = CUTOFF_FREQ / (SAMPLING_RATE / 2); 
     
     for (size_t n = 0; n < FIR_TAPS; n++) {
         if (n == N/2) {
@@ -27,10 +27,10 @@ V21_RX::V21_RX(float omega_mark, float omega_space,
             fir_coeffs[n] = std::sin(2 * std::numbers::pi_v<float> * fc * t) / 
                            (std::numbers::pi_v<float> * t);
         }
-        
+
         fir_coeffs[n] *= 0.54f - 0.46f * std::cos(2 * std::numbers::pi_v<float> * n / N);
     }
-    
+
     float sum = std::accumulate(fir_coeffs.begin(), fir_coeffs.end(), 0.0f);
     for (auto& coeff : fir_coeffs) {
         coeff /= sum;
@@ -129,13 +129,13 @@ bool V21_RX::carrier_detected()
 }
 
 
-void V21_TX::modulate(const unsigned int *in_digital_samples, 
-                      float *out_analog_samples, 
-                      unsigned int n)
+void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n)
 {
-    for (unsigned int i = 0; i < n; ++i) {
-        out_analog_samples[i] = std::sin(phase);
-        phase += (in_digital_samples[i] ? omega_mark : omega_space) * SAMPLING_PERIOD;
-        phase = std::remainder(phase, 2 * std::numbers::pi_v<float>);
+    while (n--) {
+        *out_analog_samples++ = sin(phase);
+        phase += (*in_digital_samples++ ? omega_mark : omega_space) * SAMPLING_PERIOD;
+
+        // evita que phase cresça indefinidamente, o que causaria perda de precisão
+        phase = remainder(phase, 2*std::numbers::pi);
     }
 }
