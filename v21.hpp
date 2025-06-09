@@ -26,8 +26,8 @@ private:
     std::deque<float> sample_buffer;
     float v0r_buffer = 0.0f, v0i_buffer = 0.0f;  
     float v1r_buffer = 0.0f, v1i_buffer = 0.0f;  
-    float raw_decision_buffer[2] = {0.0f, 0.0f};
-    float filtered_decision_buffer[2] = {0.0f, 0.0f};
+    float decisionBuffer[2] = {0.0f, 0.0f};
+    float filtered_decisionBuffer[2] = {0.0f, 0.0f};
     
     enum State { IDLE, CARRIER_DETECTED } state = IDLE;
     unsigned int counter = 0;

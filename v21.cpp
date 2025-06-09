@@ -54,17 +54,17 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
         v1r_buffer = v1r;
         v1i_buffer = v1i;
         
-        float raw_decision = (v1r * v1r + v1i * v1i) -
+        float decision = (v1r * v1r + v1i * v1i) -
                              (v0r * v0r + v0i * v0i);
 
-        float filtered_decision =  b[0] * raw_decision + b[1] * raw_decision_buffer[0] + b[2] * raw_decision_buffer[1] - a[1] * filtered_decision_buffer[0] - a[2] * filtered_decision_buffer[1];
+        float filtered_decision =  b[0] * decision + b[1] * decisionBuffer[0] + b[2] * decisionBuffer[1] - a[1] * filtered_decisionBuffer[0] - a[2] * filtered_decisionBuffer[1];
         
         filtered_decision /= a[0];
         
-        raw_decision_buffer[1] = raw_decision_buffer[0];
-        raw_decision_buffer[0] = raw_decision;
-        filtered_decision_buffer[1] = filtered_decision_buffer[0];
-        filtered_decision_buffer[0] = filtered_decision;
+        decisionBuffer[1] = decisionBuffer[0];
+        decisionBuffer[0] = decision;
+        filtered_decisionBuffer[1] = filtered_decisionBuffer[0];
+        filtered_decisionBuffer[0] = filtered_decision;
         
         switch (state) {
             case IDLE:
