@@ -35,6 +35,15 @@ V21_RX::V21_RX(float omega_mark, float omega_space,
     r_sin1 = BANDPASS_SMOOTHING * std::sin(omega_mark * SAMPLING_PERIOD);
 }
 
+V21_RX::V21_RX(float omega_mark, float omega_space,
+               std::function<void(const unsigned int *, unsigned int)> cb)
+    : omega_mark(omega_mark), omega_space(omega_space),
+      get_digital_samples(cb),
+      bp_mark(omega_mark, SAMPLING_RATE),
+      bp_space(omega_space, SAMPLING_RATE),
+      lp_diff(0.99f)
+{}
+
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
 {
     unsigned int digital_samples[n];

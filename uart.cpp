@@ -18,6 +18,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
             if (window.size() > 50) window.pop_front();
 
             if (sample == 0 && window.size() == 50) {
+
                 int low_count = 0;
                 for (auto s : window) low_count += (s == 0);
 
@@ -33,6 +34,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
         }
         else if (state == RECEIVING) {
             sample_index++;
+
             if (sample_index == wait_for) {
                 if (bit_index < 8) {
                     current_byte |= (sample & 1) << bit_index;
