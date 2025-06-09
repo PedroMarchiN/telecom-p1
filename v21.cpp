@@ -129,13 +129,13 @@ bool V21_RX::carrier_detected()
 }
 
 
-void V21_TX::modulate(const unsigned int *in_digital_samples, float *out_analog_samples, unsigned int n)
+void V21_TX::modulate(const unsigned int* in_digital_samples, 
+                      float* out_analog_samples, 
+                      unsigned int n)
 {
-    while (n--) {
-        *out_analog_samples++ = sin(phase);
-        phase += (*in_digital_samples++ ? omega_mark : omega_space) * SAMPLING_PERIOD;
-
-        // evita que phase cresça indefinidamente, o que causaria perda de precisão
-        phase = remainder(phase, 2*std::numbers::pi);
+    for (unsigned int i = 0; i < n; ++i) {
+        out_analog_samples[i] = std::sin(phase);
+        phase += (in_digital_samples[i] ? MARK_FREQ : SPACE_FREQ) * SAMPLING_PERIOD; // Usando as constantes membro
+        phase = std::remainder(phase, 2 * std::numbers::pi_v<float>);
     }
 }
