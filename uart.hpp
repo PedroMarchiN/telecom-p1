@@ -7,13 +7,21 @@
 #include <stdint.h>
 #include "config.hpp"
 
-class UART_RX
-{
+class UART_RX {
 public:
-    UART_RX(std::function<void(uint8_t)> get_byte) :get_byte(get_byte) {}
+    UART_RX(std::function<void(uint8_t)> get_byte);
     void put_samples(const unsigned int *buffer, unsigned int n);
+
 private:
     std::function<void(uint8_t)> get_byte;
+    enum State { IDLE, RECEIVING } state;
+    std::deque<unsigned int> window;
+
+    //contadores
+    int sample_index;
+    int bit_index;
+    uint8_t current_byte;
+    int wait_for;
 };
 
 class UART_TX

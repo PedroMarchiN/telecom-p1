@@ -1,40 +1,34 @@
 #include "uart.hpp"
-
-#include "uart.hpp"
 #include <deque>
 
-void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
-{
-    enum State { IDLE, RECEIVING };
-    static State state = IDLE;
+UART_RX::UART_RX(std::function<void(uint8_t)> get_byte) 
+    : get_byte(get_byte),
+      state(IDLE),
+      sample_index(0),
+      bit_index(0),
+      current_byte(0),
+      wait_for(0) {}
 
-    static std::deque<unsigned int> window;
-    static int sample_index = 0;
-    static int bit_index = 0;
-    static uint8_t current_byte = 0;
-    static int wait_for = 0;
-
+void UART_RX::put_samples(const unsigned int *buffer, unsigned int n) {
     for (unsigned int i = 0; i < n; ++i) {
         unsigned int sample = buffer[i];
 
         if (state == IDLE) {
-            // Preencher a janela com as últimas 30 amostras
             window.push_back(sample);
-            if (window.size() > 30)
-                window.pop_front();
+            if (window.size() > 50) window.pop_front();
 
-            if (sample == 0 && window.size() == 30) {
+            if (sample == 0 && window.size() == 50) {
+
                 int low_count = 0;
-                for (auto s : window)
-                    if (s == 0) low_count++;
+                for (auto s : window) low_count += (s == 0);
 
-                if (low_count >= 25) {
+                if (low_count >= 30) {  // maioria das amostras baixas
                     state = RECEIVING;
                     sample_index = 0;
                     bit_index = 0;
                     current_byte = 0;
-                    wait_for = 50+160;
-                    window.clear();
+                    wait_for = 50 + 160;  // Meio do start bit (50+30 do count) + período (160)
+                    window.clear();  
                 }
             }
         }
@@ -45,7 +39,7 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
                 if (bit_index < 8) {
                     current_byte |= (sample & 1) << bit_index;
                     bit_index++;
-                    wait_for += 160;
+                    wait_for += 160; // Próximo bit
                 }
                 else {
                     get_byte(current_byte);
@@ -56,7 +50,6 @@ void UART_RX::put_samples(const unsigned int *buffer, unsigned int n)
         }
     }
 }
-
 
 
 void UART_TX::put_byte(uint8_t byte)
