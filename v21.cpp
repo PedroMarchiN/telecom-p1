@@ -12,27 +12,27 @@ V21_RX::V21_RX(float omega_mark, float omega_space,
 {
     sample_buffer = std::deque<float>(SAMPLES_PER_SYMBOL, 0.0f);
     
-    lp_numerator[0] = 0.00037506961629696616f;
-    lp_numerator[1] = 0.0007501392325939323f;
-    lp_numerator[2] = 0.00037506961629696616f;
-    lp_denominator[0] = 1.0f;
-    lp_denominator[1] = -1.9444776577670935f;
-    lp_denominator[2] = 0.9459779362322813f;
+    b[0] = 0.00037507f;
+    b[1] = 0.00075014f;
+    b[2] = 0.00037507;
+    a[0] = 1.0f;
+    a[1] = -1.94447766f;
+    a[2] = 0.94597794f;
 
     const float BANDPASS_SMOOTHING = 0.99f;
     const int L = SAMPLES_PER_SYMBOL;
     
-    rl_cos_space = std::pow(BANDPASS_SMOOTHING, L) * std::cos(omega_space * L * SAMPLING_PERIOD);
-    rl_sin_space = std::pow(BANDPASS_SMOOTHING, L) * std::sin(omega_space * L * SAMPLING_PERIOD);
-    r_cos_space = BANDPASS_SMOOTHING * std::cos(omega_space * SAMPLING_PERIOD);
-    r_sin_space = BANDPASS_SMOOTHING * std::sin(omega_space * SAMPLING_PERIOD);
+    rl_cos0 = std::pow(BANDPASS_SMOOTHING, L) * std::cos(omega_space * L * SAMPLING_PERIOD);
+    rl_sin0 = std::pow(BANDPASS_SMOOTHING, L) * std::sin(omega_space * L * SAMPLING_PERIOD);
+    r_cos0 = BANDPASS_SMOOTHING * std::cos(omega_space * SAMPLING_PERIOD);
+    r_sin0 = BANDPASS_SMOOTHING * std::sin(omega_space * SAMPLING_PERIOD);
     
-    rl_cos_mark = std::pow(BANDPASS_SMOOTHING, L) * 
+    rl_cos1 = std::pow(BANDPASS_SMOOTHING, L) * 
                   std::cos(omega_mark * L * SAMPLING_PERIOD);
-    rl_sin_mark = std::pow(BANDPASS_SMOOTHING, L) * 
+    rl_sin1 = std::pow(BANDPASS_SMOOTHING, L) * 
                   std::sin(omega_mark * L * SAMPLING_PERIOD);
-    r_cos_mark = BANDPASS_SMOOTHING * std::cos(omega_mark * SAMPLING_PERIOD);
-    r_sin_mark = BANDPASS_SMOOTHING * std::sin(omega_mark * SAMPLING_PERIOD);
+    r_cos1 = BANDPASS_SMOOTHING * std::cos(omega_mark * SAMPLING_PERIOD);
+    r_sin1 = BANDPASS_SMOOTHING * std::sin(omega_mark * SAMPLING_PERIOD);
 }
 
 void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
@@ -44,22 +44,22 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
         sample_buffer.push_front(in_analog_samples[i]);
         sample_buffer.pop_back();
         
-        float vspace_r = sample_buffer[0] - rl_cos_space * sample_buffer[L] + r_cos_space * vspace_r_buffer - r_sin_space * vspace_i_buffer;
-        float vspace_i = -rl_sin_space * sample_buffer[L] +  r_cos_space * vspace_i_buffer + r_sin_space * vspace_r_buffer;
-        float vmark_r = sample_buffer[0] - rl_cos_mark * sample_buffer[L] + r_cos_mark * vmark_r_buffer - r_sin_mark * vmark_i_buffer;
-        float vmark_i = -rl_sin_mark * sample_buffer[L] + r_cos_mark * vmark_i_buffer + r_sin_mark * vmark_r_buffer;
+        float v0r = sample_buffer[0] - rl_cos0 * sample_buffer[L] + r_cos0 * v0r_buffer - r_sin0 * v0i_buffer;
+        float v0i = -rl_sin0 * sample_buffer[L] +  r_cos0 * v0i_buffer + r_sin0 * v0r_buffer;
+        float v1r = sample_buffer[0] - rl_cos1 * sample_buffer[L] + r_cos1 * v1r_buffer - r_sin1 * v1i_buffer;
+        float v1i = -rl_sin1 * sample_buffer[L] + r_cos1 * v1i_buffer + r_sin1 * v1r_buffer;
 
-        vspace_r_buffer = vspace_r;
-        vspace_i_buffer = vspace_i;
-        vmark_r_buffer = vmark_r;
-        vmark_i_buffer = vmark_i;
+        v0r_buffer = v0r;
+        v0i_buffer = v0i;
+        v1r_buffer = v1r;
+        v1i_buffer = v1i;
         
-        float raw_decision = (vmark_r * vmark_r + vmark_i * vmark_i) -
-                             (vspace_r * vspace_r + vspace_i * vspace_i);
+        float raw_decision = (v1r * v1r + v1i * v1i) -
+                             (v0r * v0r + v0i * v0i);
 
-        float filtered_decision =  lp_numerator[0] * raw_decision + lp_numerator[1] * raw_decision_buffer[0] + lp_numerator[2] * raw_decision_buffer[1] - lp_denominator[1] * filtered_decision_buffer[0] - lp_denominator[2] * filtered_decision_buffer[1];
+        float filtered_decision =  b[0] * raw_decision + b[1] * raw_decision_buffer[0] + b[2] * raw_decision_buffer[1] - a[1] * filtered_decision_buffer[0] - a[2] * filtered_decision_buffer[1];
         
-        filtered_decision /= lp_denominator[0];
+        filtered_decision /= a[0];
         
         raw_decision_buffer[1] = raw_decision_buffer[0];
         raw_decision_buffer[0] = raw_decision;
@@ -70,7 +70,7 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
             case IDLE:
                 if (std::abs(filtered_decision) > 120.0f) {
                     digital_samples[i] = (filtered_decision > 0) ? 1 : 0;
-                    low_difference_counter = 0;
+                    counter = 0;
                     state = CARRIER_DETECTED;
                 } else {
                     digital_samples[i] = 1; 
@@ -79,12 +79,12 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
                 
             case CARRIER_DETECTED:
                 if (std::abs(filtered_decision) < 60.0f) {
-                    low_difference_counter++;
+                    counter++;
                 } else {
-                    low_difference_counter = 0;
+                    counter = 0;
                 }
                 
-                if (low_difference_counter >= 50) {
+                if (counter >= 50) {
                     digital_samples[i] = 1;
                     state = IDLE;
                 } else {

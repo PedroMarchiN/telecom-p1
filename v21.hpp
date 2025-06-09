@@ -17,21 +17,20 @@ private:
     float omega_mark, omega_space;
     std::function<void(const unsigned int *, unsigned int)> get_digital_samples;
 
-    float rl_cos_space, rl_sin_space, r_cos_space, r_sin_space;
-    float rl_cos_mark, rl_sin_mark, r_cos_mark, r_sin_mark;
+    float rl_cos0, rl_sin0, r_cos0, r_sin0;  
+    float rl_cos1, rl_sin1, r_cos1, r_sin1;  
     
-    float lp_numerator[3];
-    float lp_denominator[3];
+    float b[3];
+    float a[3];
     
-
     std::deque<float> sample_buffer;
-    float vspace_r_buffer = 0.0f, vspace_i_buffer = 0.0f;
-    float vmark_r_buffer = 0.0f, vmark_i_buffer = 0.0f;
+    float v0r_buffer = 0.0f, v0i_buffer = 0.0f;  
+    float v1r_buffer = 0.0f, v1i_buffer = 0.0f;  
     float raw_decision_buffer[2] = {0.0f, 0.0f};
     float filtered_decision_buffer[2] = {0.0f, 0.0f};
     
     enum State { IDLE, CARRIER_DETECTED } state = IDLE;
-    unsigned int low_difference_counter = 0;
+    unsigned int counter = 0;
 };
 
 class V21_TX
