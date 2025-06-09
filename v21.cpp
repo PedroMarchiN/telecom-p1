@@ -68,17 +68,17 @@ void V21_RX::demodulate(const float *in_analog_samples, unsigned int n)
         
         switch (state) {
             case IDLE:
-                if (std::abs(filtered_decision) > 120.0f) {
+                if (std::abs(filtered_decision) > 120) {
                     digital_samples[i] = (filtered_decision > 0) ? 1 : 0;
                     counter = 0;
-                    state = CARRIER_DETECTED;
+                    state = STARTED;
                 } else {
                     digital_samples[i] = 1; 
                 }
                 break;
                 
-            case CARRIER_DETECTED:
-                if (std::abs(filtered_decision) < 60.0f) {
+            case STARTED:
+                if (std::abs(filtered_decision) < 60) {
                     counter++;
                 } else {
                     counter = 0;

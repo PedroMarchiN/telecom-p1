@@ -24,12 +24,12 @@ private:
     float a[3];
     
     std::deque<float> sample_buffer;
-    float v0r_buffer = 0.0f, v0i_buffer = 0.0f;  
-    float v1r_buffer = 0.0f, v1i_buffer = 0.0f;  
-    float decisionBuffer[2] = {0.0f, 0.0f};
-    float filtered_decisionBuffer[2] = {0.0f, 0.0f};
+    float v0r_buffer = 0, v0i_buffer = 0;  
+    float v1r_buffer = 0, v1i_buffer = 0;  
+    float decisionBuffer[2] = {0, 0};
+    float filtered_decisionBuffer[2] = {0, 0};
     
-    enum State { IDLE, CARRIER_DETECTED } state = IDLE;
+    enum State { IDLE, STARTED } state = IDLE;
     unsigned int counter = 0;
 };
 
